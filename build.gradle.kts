@@ -14,10 +14,9 @@ repositories {
 }
 
 dependencies {
+    //Patches
     implementation("org.ow2.asm:asm:9.7")
     implementation("org.ow2.asm:asm-util:9.7")
-
-    implementation("org.spongepowered:mixin:0.8.5")
 }
 
 kotlin {

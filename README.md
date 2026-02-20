@@ -117,3 +117,78 @@ File("mods").listFiles()?.forEach { jar ->
 
 Но если тебе нужно «чтобы работало» —
 то решение выше реально будет работать в твоём коде.
+
+
+package net.Mirik9724.EVBoot
+
+import org.spongepowered.asm.launch.MixinBootstrap
+import org.spongepowered.asm.mixin.Mixins
+import org.spongepowered.asm.mixin.MixinEnvironment
+import java.io.File
+import java.lang.reflect.Method
+import java.net.URL
+import java.net.URLClassLoader
+
+class MixinLoader {
+
+    companion object {
+
+        @JvmStatic
+        fun init(loader: ClassLoader) {
+            try {
+                println("[EVBoot] Initializing Mixin Subsystem...")
+
+                // Устанавливаем правильный сервис для Paper/Spigot
+                // Это самый важный момент — без него Mixin не знает, как работать
+                System.setProperty("mixin.service", "org.spongepowered.asm.service.mojang.MixinServiceLaunchWrapperBootstrap")
+
+                // Инициализация Mixin
+                MixinBootstrap.init()
+
+                // Устанавливаем сторону сервера
+                MixinEnvironment.getDefaultEnvironment().setSide(MixinEnvironment.Side.SERVER)
+
+                // Добавляем все mixin-конфиги из ресурсов бута
+                // (mixins.evboot.json должен лежать в src/main/resources)
+                Mixins.addConfiguration("mixins.evboot.json")
+
+                // Если у тебя несколько конфигов — добавь их все
+                // Mixins.addConfiguration("other.mixins.json")
+
+                // Загружаем моды из boot/mods/*.jar
+                loadMods(loader)
+
+                println("[EVBoot] Mixin Subsystem ready! Loaded ${Mixins.getConfigs().size} configs")
+            } catch (e: Throwable) {
+                println("[EVBoot] Critical error during Mixin init:")
+                e.printStackTrace()
+            }
+        }
+
+        private fun loadMods(loader: ClassLoader) {
+            val modsDir = File("boot/mods")
+            if (!modsDir.exists() || !modsDir.isDirectory) {
+                println("[EVBoot] No mods directory found at boot/mods")
+                return
+            }
+
+            val files = modsDir.listFiles { _, name -> name.endsWith(".jar") } ?: return
+
+            // Добавляем JAR'ы в loader через рефлексию (addURL)
+            val method: Method = URLClassLoader::class.java.getDeclaredMethod("addURL", URL::class.java)
+            method.isAccessible = true
+
+            for (jar in files) {
+                try {
+                    method.invoke(loader, jar.toURI().toURL())
+                    println("[EVBoot] Loaded mod: ${jar.name}")
+
+                    // Если в моде есть mixin-конфиг — добавь его автоматически
+                    // (можно парсить fabric.mod.json или просто искать *.mixins.json)
+                } catch (e: Exception) {
+                    println("[EVBoot] Failed to load mod ${jar.name}: ${e.message}")
+                }
+            }
+        }
+    }
+}

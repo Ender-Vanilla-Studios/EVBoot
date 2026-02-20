@@ -1,5 +1,14 @@
 package net.Mirik9724.EVBoot
 
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.MethodVisitor
+import org.objectweb.asm.Opcodes.ACONST_NULL
+import org.objectweb.asm.Opcodes.ASM9
+import org.objectweb.asm.Opcodes.INVOKESTATIC
+import org.objectweb.asm.Opcodes.POP
+import org.objectweb.asm.Opcodes.RETURN
 import java.io.File
 import java.net.URLClassLoader
 
@@ -69,6 +78,7 @@ object Main {
         }
 
         Thread.currentThread().contextClassLoader = loader
+
         try {
             val tempLoader = URLClassLoader(arrayOf(serverJar.toURI().toURL()), null)
             val customLogManagerClass = tempLoader.loadClass("io.papermc.paper.log.CustomLogManager")
@@ -90,6 +100,62 @@ object Main {
         if (name == "net.minecraft.server.MinecraftServer") {
             println("--- [EVBoot] Patching MinecraftServer ---")
         }
+
+        if (name == "net.minecraft.world.item.enchantment.Enchantments") {
+            println("--- [EVBoot] Patching Enchantments Registry ---")
+            val reader = ClassReader(originalBytes)
+            val writer = ClassWriter(ClassWriter.COMPUTE_FRAMES)
+
+            val visitor = object : ClassVisitor(ASM9, writer) {
+                override fun visitMethod(
+                    access: Int,
+                    name: String?,
+                    descriptor: String?,
+                    signature: String?,
+                    exceptions: Array<out String>?
+                ): MethodVisitor {
+                    val mv = super.visitMethod(access, name, descriptor, signature, exceptions)
+
+                    if (name == "<clinit>") {
+                        return object : MethodVisitor(ASM9, mv) {
+                            override fun visitInsn(opcode: Int) {
+                                if (opcode == RETURN) {
+
+                                    visitLdcInsn("density")
+                                    visitInsn(ACONST_NULL) // stub
+                                    visitMethodInsn(
+                                        INVOKESTATIC,
+                                        "net/minecraft/core/registries/BuiltInRegistries",
+                                        "register",
+                                        "(Lnet/minecraft/core/registries/Registry;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;",
+                                        false
+                                    )
+                                    visitInsn(POP)
+
+                                    visitLdcInsn("wind_burst")
+                                    visitInsn(ACONST_NULL)
+                                    visitMethodInsn(
+                                        INVOKESTATIC,
+                                        "net/minecraft/core/registries/BuiltInRegistries",
+                                        "register",
+                                        "(Lnet/minecraft/core/registries/Registry;Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;",
+                                        false
+                                    )
+                                    visitInsn(POP)
+
+                                }
+                                super.visitInsn(opcode)
+                            }
+                        }
+                    }
+                    return mv
+                }
+            }
+
+            reader.accept(visitor, 0)
+            return writer.toByteArray()
+        }
+
         return originalBytes
     }
 }
