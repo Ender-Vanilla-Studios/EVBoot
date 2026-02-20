@@ -10,13 +10,14 @@ val mcv = "1.20.1"
 
 repositories {
     mavenCentral()
+    maven("https://repo.spongepowered.org/maven/")
 }
 
 dependencies {
     implementation("org.ow2.asm:asm:9.7")
     implementation("org.ow2.asm:asm-util:9.7")
 
-    implementation("com.lmax:disruptor:3.4.4")
+    implementation("org.spongepowered:mixin:0.8.5")
 }
 
 kotlin {
@@ -25,12 +26,9 @@ kotlin {
 
 tasks.shadowJar {
     archiveFileName.set("$namec-$version-mc$mcv.jar")
-
     mergeServiceFiles()
 
-    manifest {
-        attributes["Main-Class"] = "net.Mirik9724.EVBoot.Main"
-    }
+    manifest { attributes["Main-Class"] = "net.Mirik9724.EVBoot.Main" }
 }
 
 tasks.register<Exec>("runServer") {
