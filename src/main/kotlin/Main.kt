@@ -18,24 +18,20 @@ object Main {
         if (!serverJar.exists()) {
             println("Preparing Paper files (patch-only)... Please wait.")
 
-            val javaBin = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java"
+            System.setProperty("paperclip.patchonly", "true")
 
-            val processBuilder = ProcessBuilder(
-                javaBin,
-                "-Dpaperclip.patchonly=true",
-                "-jar",
-                origJar.name
-            ).inheritIO()
+            val paperLoader = URLClassLoader(
+                arrayOf(origJar.toURI().toURL()),
+                null
+            )
 
-            val process = processBuilder.start()
-            val exitCode = process.waitFor()
+            val paperMainClass = paperLoader.loadClass("io.papermc.paperclip.Paperclip")
+            val paperMainMethod = paperMainClass.getMethod("main", Array<String>::class.java)
 
-            if (exitCode == 0) {
-                println("Patching completed successfully!")
-            } else {
-                println("Error preparing paper! Exit code: $exitCode")
-                return
-            }
+            paperMainMethod.invoke(null, arrayOf<String>())
+
+            println("Patching completed successfully!")
+            println("Load server again!")
         }
 
         val librariesDir = File("libraries")
@@ -81,9 +77,6 @@ object Main {
             println("Failed to preload CustomLogManager: ${e.message}")
             e.printStackTrace()
         }
-
-//        System.setProperty("java.util.logging.manager", "io.papermc.paper.log.CustomLogManager")
-
 
         net.Mirik9724.EVBoot.Config
 
