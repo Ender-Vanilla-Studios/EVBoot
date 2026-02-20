@@ -1,7 +1,6 @@
-package net.Mirik9724.stopTiks
+package net.Mirik9724.EVBoot
 
 import java.io.File
-import java.net.URL
 import java.net.URLClassLoader
 
 object Main {
@@ -9,10 +8,53 @@ object Main {
     @JvmStatic
     fun main(args: Array<String>) {
 
-        val serverJar = File("paper-1.20.1-196.jar")
+        val origJar = File("paper-1.20.1-196.jar")
+        if (!origJar.exists()) {
+            println("Paper JAR not found at ${origJar.absolutePath}!")
+            return
+        }
+
+        val serverJar = File("versions/1.20.1/paper-1.20.1.jar")
+        if (!serverJar.exists()) {
+            println("Preparing Paper files (patch-only)... Please wait.")
+
+            val javaBin = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java"
+
+            val processBuilder = ProcessBuilder(
+                javaBin,
+                "-Dpaperclip.patchonly=true",
+                "-jar",
+                origJar.name
+            ).inheritIO()
+
+            val process = processBuilder.start()
+            val exitCode = process.waitFor()
+
+            if (exitCode == 0) {
+                println("Patching completed successfully!")
+            } else {
+                println("Error preparing paper! Exit code: $exitCode")
+                return
+            }
+        }
+
+        val librariesDir = File("libraries")
+
+        val classpathUrls = mutableListOf(serverJar.toURI().toURL())
+
+        if (librariesDir.exists() && librariesDir.isDirectory) {
+            librariesDir.walkTopDown()
+                .filter { it.isFile && it.extension.equals("jar", ignoreCase = true) }
+                .forEach { jarFile ->
+                    classpathUrls.add(jarFile.toURI().toURL())
+                }
+        } else {
+            println("libraries/ does not exist")
+            return
+        }
 
         val loader = object : URLClassLoader(
-            arrayOf(serverJar.toURI().toURL()),
+            classpathUrls.toTypedArray(),
             ClassLoader.getSystemClassLoader()
         ) {
 
@@ -30,6 +72,21 @@ object Main {
             }
         }
 
+        Thread.currentThread().contextClassLoader = loader
+        try {
+            val tempLoader = URLClassLoader(arrayOf(serverJar.toURI().toURL()), null)
+            val customLogManagerClass = tempLoader.loadClass("io.papermc.paper.log.CustomLogManager")
+            println("Preloaded CustomLogManager: ${customLogManagerClass.name}")
+        } catch (e: Exception) {
+            println("Failed to preload CustomLogManager: ${e.message}")
+            e.printStackTrace()
+        }
+
+//        System.setProperty("java.util.logging.manager", "io.papermc.paper.log.CustomLogManager")
+
+
+        net.Mirik9724.EVBoot.Config
+
         val mainClass = loader.loadClass("org.bukkit.craftbukkit.Main")
         val mainMethod = mainClass.getMethod("main", Array<String>::class.java)
 
@@ -37,79 +94,9 @@ object Main {
     }
 
     fun patch(name: String, originalBytes: ByteArray): ByteArray {
-        if (!name.endsWith("MinecraftServer")) {
-            return originalBytes
+        if (name == "net.minecraft.server.MinecraftServer") {
+            println("--- [EVBoot] Patching MinecraftServer ---")
         }
-
-        println("Patched MinecraftServer: $name (тики мира всегда заморожены)")
-
-        val cr = ClassReader(originalBytes)
-        val cw = ClassWriter(cr, ClassWriter.COMPUTE_FRAMES or ClassWriter.COMPUTE_MAXS)
-
-        val cv = object : ClassVisitor(ASM9, cw) {
-             fun visitMethod(
-                access: Int,
-                name: String?,
-                descriptor: String?,
-                signature: String?,
-                exceptions: Array<out String>?
-            ): MethodVisitor {
-                val mv = super.visitMethod(access, name, descriptor, signature, exceptions)
-
-                // Целевой метод — tickServer (в 1.20.1 Mojang mappings обычно "tickServer")
-                // Дескриптор: (Ljava/util/function/BooleanSupplier;)V
-                if (name == "tickServer" && descriptor == "(Ljava/util/function/BooleanSupplier;)V") {
-                    return object : MethodVisitor(ASM9, mv) {
-                         fun visitCode() {
-                            super.visitCode()
-
-                            // Вставляем в самое начало метода:
-                            // this.getPlayerList().tick();
-                            // this.getCommands().tick();   // или getCommandManager в зависимости от mappings
-                            // return;  // выходим — ничего больше не тикает
-
-                            mv.visitVarInsn(ALOAD, 0) // this (MinecraftServer)
-                            mv.visitMethodInsn(
-                                INVOKEVIRTUAL,
-                                "net/minecraft/server/MinecraftServer",
-                                "getPlayerList",
-                                "()Lnet/minecraft/server/players/PlayerList;",
-                                false
-                            )
-                            mv.visitMethodInsn(
-                                INVOKEVIRTUAL,
-                                "net/minecraft/server/players/PlayerList",
-                                "tick",
-                                "()V",
-                                false
-                            )
-
-                            mv.visitVarInsn(ALOAD, 0)
-                            mv.visitMethodInsn(
-                                INVOKEVIRTUAL,
-                                "net/minecraft/server/MinecraftServer",
-                                "getCommands",              // проверь имя метода! Может быть getCommandManager или getCommandDispatcher
-                                "()Lnet/minecraft/commands/Commands;",
-                                false
-                            )
-                            mv.visitMethodInsn(
-                                INVOKEVIRTUAL,
-                                "net/minecraft/commands/Commands",
-                                "tick",
-                                "()V",
-                                false
-                            )
-
-                            mv.visitInsn(RETURN) // Выходим из метода — остальной тик пропущен навсегда
-                        }
-                    }
-                }
-
-                return mv
-            }
-        }
-
-        cr.accept(cv, 0)
-        return cw.toByteArray()
+        return originalBytes
     }
 }
